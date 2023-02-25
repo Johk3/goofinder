@@ -2,6 +2,8 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
+import concurrent.futures
+
 
 # read proxies from file
 with open('proxies.txt', 'r') as f:
@@ -9,6 +11,8 @@ with open('proxies.txt', 'r') as f:
 
 def scrape_website(url):
     # set up session with random proxy
+    print("Crawling ${url}")
+
     proxy = {'http': proxies.pop(0)}
     session = requests.Session()
     session.proxies = proxy
@@ -39,16 +43,18 @@ def scrape_website(url):
             parsed_url = urlparse(url)
             if parsed_href.netloc == parsed_url.netloc and (parsed_href.path.startswith(parsed_url.path) or parsed_href.path == parsed_url.path+'/'):
                 links.add(href)
-
-    # scrape subdomains and subdirectories
-    for link in links:
-        if link.startswith('http'):
-            scrape_website(link)
-        elif link.startswith('/'):
-            scrape_website(parsed_url.scheme+'://'+parsed_url.netloc+link)
+    # scrape subdomains and subdirectories with asynchronous threading
+    results = {'emails': emails, 'phone_numbers': phone_numbers, 'names': names}
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(scrape_website, link) for link in links if link.startswith('http') or link.startswith('/')]
+        for future in concurrent.futures.as_completed(futures):
+            sub_results = future.result()
+            results['emails'].update(sub_results['emails'])
+            results['phone_numbers'].update(sub_results['phone_numbers'])
+            results['names'].update(sub_results['names'])
 
     # return results
-    return emails, names, phone_numbers 
+    return results 
 
 sites = []
 
@@ -57,9 +63,8 @@ names = set()
 phone_numbers = set()
 
 for site in sites:
-    print("Crawling ${site}")
-    new_emails, new_names, new_phone_numbers = scrape_website(site)
-    emails.update(new_emails)
-    names.update(new_names)
-    phone_numbers.update(new_phone_numbers)
+    final_results = scrape_website(site)
+    emails.update(final_results['emails'])
+    names.update(final_results['names'])
+    phone_numbers.update(final_results['phone_numbers'])
 
