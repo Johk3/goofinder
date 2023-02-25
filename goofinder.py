@@ -38,7 +38,7 @@ def scrape_website(url):
     soup = BeautifulSoup(res.content, 'html.parser')
 
     # find email addresses, phone numbers and names
-    emails = set(re.findall(r'[\w\.-]+@[\w\.-]+', soup.get_text()))
+    emails = set(re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', soup.get_text()))
     phone_numbers = set(re.findall(r'\d{10,}', soup.get_text()))
     names = set(re.findall(r'[A-Z][a-z]* [A-Z][a-z]*', soup.get_text()))
 
