@@ -3,17 +3,25 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 import concurrent.futures
+import random
+import json
 
+# Converts sets into a serializable form
+class SetEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return list(obj)
+        return json.JSONEncoder.default(self, obj)
 
 # read proxies from file
-with open('proxies.txt', 'r') as f:
+with open('socks5_proxies.txt', 'r') as f:
     proxies = f.read().splitlines()
 
 def scrape_website(url):
     # set up session with random proxy
-    print("Crawling ${url}")
+    print(f"Crawling {url}")
 
-    proxy = {'http': proxies.pop(0)}
+    proxy = {'http': random.choice(proxies)}
     session = requests.Session()
     session.proxies = proxy
 
@@ -23,7 +31,7 @@ def scrape_website(url):
     except:
         # switch proxy if connection fails
         proxies.append(proxy['http'])
-        proxy = {'http': proxies.pop(0)}
+        proxy = {'http': random.choice(proxies)}
         session.proxies = proxy
         res = session.get(url)
 
@@ -43,6 +51,7 @@ def scrape_website(url):
             parsed_url = urlparse(url)
             if parsed_href.netloc == parsed_url.netloc and (parsed_href.path.startswith(parsed_url.path) or parsed_href.path == parsed_url.path+'/'):
                 links.add(href)
+
     # scrape subdomains and subdirectories with asynchronous threading
     results = {'emails': emails, 'phone_numbers': phone_numbers, 'names': names}
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -56,7 +65,8 @@ def scrape_website(url):
     # return results
     return results 
 
-sites = []
+with open("sites.txt", "r") as sites_file:
+    sites = sites_file.read().splitlines()
 
 emails = set()
 names = set()
@@ -67,4 +77,12 @@ for site in sites:
     emails.update(final_results['emails'])
     names.update(final_results['names'])
     phone_numbers.update(final_results['phone_numbers'])
+    with open("{}.json".format(site.split("/")[2]), "w+") as  output:
+        output.write(json.dumps(final_results, cls=SetEncoder))
+    print("Wrote to file.")
+
+
+print("Found {} emails".format(len(emails)))
+print("Found {} names".format(len(names)))
+print("Found {} phone numbers".format(len(phone_numbers)))
 
