@@ -3,62 +3,52 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 
-def get_links(url):
-    response = requests.get(url)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    links = set()
+# read proxies from file
+with open('proxies.txt', 'r') as f:
+    proxies = f.read().splitlines()
 
+def scrape_website(url):
+    # set up session with random proxy
+    proxy = {'http': proxies.pop(0)}
+    session = requests.Session()
+    session.proxies = proxy
+
+    # get website content
+    try:
+        res = session.get(url)
+    except:
+        # switch proxy if connection fails
+        proxies.append(proxy['http'])
+        proxy = {'http': proxies.pop(0)}
+        session.proxies = proxy
+        res = session.get(url)
+
+    soup = BeautifulSoup(res.content, 'html.parser')
+
+    # find email addresses, phone numbers and names
+    emails = set(re.findall(r'[\w\.-]+@[\w\.-]+', soup.get_text()))
+    phone_numbers = set(re.findall(r'\d{10,}', soup.get_text()))
+    names = set(re.findall(r'[A-Z][a-z]* [A-Z][a-z]*', soup.get_text()))
+
+    # find links to subdomains and subdirectories
+    links = set()
     for link in soup.find_all('a'):
         href = link.get('href')
-        if href and urlparse(href).netloc == urlparse(url).netloc:
-            links.add(urljoin(url, href))
+        if href:
+            parsed_href = urlparse(href)
+            parsed_url = urlparse(url)
+            if parsed_href.netloc == parsed_url.netloc and (parsed_href.path.startswith(parsed_url.path) or parsed_href.path == parsed_url.path+'/'):
+                links.add(href)
 
-    return links
+    # scrape subdomains and subdirectories
+    for link in links:
+        if link.startswith('http'):
+            scrape_website(link)
+        elif link.startswith('/'):
+            scrape_website(parsed_url.scheme+'://'+parsed_url.netloc+link)
 
-def extract_info(url):
-    response = requests.get(url)
-    soup = BeautifulSoup(response.content, 'html.parser')
-
-    emails = set(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', soup.get_text()))
-    names = set(re.findall(r'\b[A-Z][a-z]+ [A-Z][a-z]+\b', soup.get_text()))
-    phone_numbers = set(re.findall(r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b', soup.get_text()))
-
-    print("Email addresses found on", url, ": ", emails)
-    print("Names found on", url, ": ", names)
-    print("Phone numbers found on", url, ": ", phone_numbers)
-
-    return emails, names, phone_numbers
-
-def crawl_website(url):
-    visited_urls = set()
-    emails = set()
-    names = set()
-    phone_numbers = set()
-
-    def crawl(url):
-        if url in visited_urls:
-            return
-        visited_urls.add(url)
-
-        new_emails, new_names, new_phone_numbers = extract_info(url)
-        emails.update(new_emails)
-        names.update(new_names)
-        phone_numbers.update(new_phone_numbers)
-
-        links = get_links(url)
-        for link in links:
-            if link not in visited_urls and (urlparse(link).netloc == urlparse(url).netloc or urlparse(link).netloc == ''):
-                crawl(link)
-
-    crawl(url)
-
-    print("Total email addresses found: ", len(emails))
-    print("Total names found: ", len(names))
-    print("Total phone numbers found: ", len(phone_numbers))
-
-    return emails, names, phone_numbers
-
-
+    # return results
+    return emails, names, phone_numbers 
 
 sites = []
 
@@ -68,7 +58,7 @@ phone_numbers = set()
 
 for site in sites:
     print("Crawling ${site}")
-    new_emails, new_names, new_phone_numbers = crawl_website(site)
+    new_emails, new_names, new_phone_numbers = scrape_website(site)
     emails.update(new_emails)
     names.update(new_names)
     phone_numbers.update(new_phone_numbers)
